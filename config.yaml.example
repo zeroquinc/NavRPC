@@ -1,0 +1,20 @@
+# Rename this to config.yaml and place sensitive data here.
+
+navidrome:
+  base_url: http://IP:PORT/rest
+  username: username
+  password: password
+
+integration:
+  imgur_client_id: xxxxx # Your Imgur Client ID
+  discord_client_id: 'xxxxx' # Your Discord Application ID
+  discord_asset_name: null # Set to an asset name (e.g., 'navidrome_logo') or 'null'
+
+general:
+  poll_interval_seconds: 5
+  cache_file: cache.json
+
+image:
+  max_size: 512 # Max width/height for image assets (Discord recommended is 512)
+  jpeg_quality: 85
+  max_file_bytes: 4194304 # 4MB (4 * 1024 * 1024)

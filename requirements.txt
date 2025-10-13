@@ -1,0 +1,5 @@
+pypresence
+requests
+Pillow
+pyyaml
+pydantic>=2.0.0
