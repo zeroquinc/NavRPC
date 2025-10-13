@@ -4,10 +4,9 @@
 
 ## 📷 Example
 
-<img width="226" height="58" alt="afbeelding" src="https://github.com/user-attachments/assets/d32eceac-14c5-4b3d-bfbb-943d5f62f748" />
+<img width="226" height="58" alt="d32eceac-14c5-4b3d-bfbb-943d5f62f748" src="https://github.com/user-attachments/assets/c78fd59e-7a38-444e-99dc-da7bb4515e57" />
 <br>
-<img width="452" height="192" alt="afbeelding" src="https://github.com/user-attachments/assets/33077796-a82b-4eac-a379-02b96434977a" />
-
+<img width="452" height="192" alt="33077796-a82b-4eac-a379-02b96434977a" src="https://github.com/user-attachments/assets/157a9a0d-0962-4b4a-8292-27730dce1470" />
 
 ## ✨ Features
 
@@ -69,5 +68,6 @@ You must set up your API keys and Navidrome server details.
 Execute the entry point script from the project root:
 
 ```bash
+
 
 python run.py
