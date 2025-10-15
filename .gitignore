@@ -166,3 +166,4 @@ cython_debug/
 *.yaml
 *.yml
 *.json
+*.bat
