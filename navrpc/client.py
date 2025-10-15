@@ -1,14 +1,11 @@
 import base64
 import io
-import json
-import os
-import time
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any
 
 import requests
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 from PIL import Image
 
 from .config import NavidromeConfig, ImageConfig
@@ -60,10 +57,16 @@ class TrackInfo:
         if not isinstance(entry, dict):
             return None
 
-        # Existing robust parsing logic
         title = entry.get("title") or entry.get("name", "")
-        raw_artists = entry.get("artist") or entry.get("artists", "")
-        artists = ", ".join(a.strip() for a in raw_artists.replace(";", ",").split(",") if a.strip())
+        
+        # Use the artists array which contains the proper artist information
+        artist_entries = entry.get("artists", [])
+        if artist_entries:
+            artists = ", ".join(a["name"] for a in artist_entries if isinstance(a, dict) and "name" in a)
+        else:
+            # Fallback to albumArtists if no artists are specified
+            album_artists = entry.get("albumArtists", [])
+            artists = ", ".join(a["name"] for a in album_artists if isinstance(a, dict) and "name" in a) if album_artists else "Unknown"
         duration = int(entry.get("duration", 0)) if entry.get("duration") else None
         position_raw = entry.get("position", entry.get("elapsed"))
         position_seconds = None
