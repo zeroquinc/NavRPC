@@ -1,7 +1,8 @@
 import time
 from typing import Optional, Tuple
 
-from pypresence import Presence, ActivityType, StatusDisplayType
+from pypresence.presence import Presence
+from pypresence.types import ActivityType, StatusDisplayType
 
 from .client import TrackInfo, log
 
