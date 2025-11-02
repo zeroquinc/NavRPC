@@ -13,7 +13,8 @@ integration:
 general:
   poll_interval_seconds: 5
   cache_file: cache.json
-  strip_title_subtitle: true # Remove subtitle from track titles (e.g., "(Explicit)", "(Remastered)")
+  track_comment: false # Show track subtitle/comment (e.g., "(Explicit)", "(Remastered)"). Default: false
+  album_version: false # Show album version/edition (e.g., "(Remastered Edition 2014)"). Default: false
 
 image:
   max_size: 512 # Max width/height for image assets (Discord recommended is 512)

@@ -37,8 +37,24 @@ class Settings(BaseModel):
         return self.general.get("cache_file", "cache.json")
 
     @property
-    def strip_title_subtitle(self) -> bool:
-        return self.general.get("strip_title_subtitle", True)
+    def track_comment(self) -> bool:
+        """Show track subtitle/comment. If false (default), strips subtitle from title."""
+        # Check new name first, then fall back to legacy name with inverted logic
+        if "track_comment" in self.general:
+            return bool(self.general.get("track_comment"))
+        if "strip_title_subtitle" in self.general:
+            return not bool(self.general.get("strip_title_subtitle"))
+        return False
+
+    @property
+    def album_version(self) -> bool:
+        """Show album version/edition. If false (default), doesn't fetch/append album version."""
+        # Check new name first, then fall back to legacy name with inverted logic
+        if "album_version" in self.general:
+            return bool(self.general.get("album_version"))
+        if "strip_album_subtitle" in self.general:
+            return not bool(self.general.get("strip_album_subtitle"))
+        return False
 
 
 def load_config(path: str = "config.yaml") -> Settings:

@@ -45,7 +45,7 @@ class TrackInfo:
     minutes_ago: Optional[int] = None
 
     @classmethod
-    def from_json(cls, np_json: Optional[dict], strip_subtitle: bool = True) -> Optional["TrackInfo"]:
+    def from_json(cls, np_json: Optional[dict], track_comment: bool = False, album_version: bool = False) -> Optional["TrackInfo"]:
         # Simplified the parsing, assuming standard Navidrome output structure
         if not np_json:
             return None
@@ -60,9 +60,11 @@ class TrackInfo:
         # Get title with or without subtitle based on config
         raw_title = entry.get("title") or entry.get("name", "")
         
-        if strip_subtitle:
-            # sortName contains the plain title without subtitle (but lowercase)
-            # title contains the full title including subtitle in parentheses
+        if track_comment:
+            # Keep full title including subtitle/comment
+            title = raw_title
+        else:
+            # Strip subtitle: sortName contains the plain title without subtitle (but lowercase)
             sort_name = entry.get("sortName", "").strip()
             
             if sort_name:
@@ -77,9 +79,6 @@ class TrackInfo:
                     title = sort_name.title()
             else:
                 title = raw_title
-        else:
-            # Keep full title including subtitle
-            title = raw_title
         
         # Use the artists array which contains the proper artist information
         artist_entries = entry.get("artists", [])
@@ -99,10 +98,20 @@ class TrackInfo:
                 if pos >= 0: position_seconds = pos
             except Exception: position_seconds = None
 
+        # Get album with or without version based on config
+        raw_album = entry.get("album", "")
+        album_comment = entry.get("_albumComment", "")
+        
+        if album_version and album_comment:
+            # Append the album version/edition in parentheses
+            album = f"{raw_album} ({album_comment})"
+        else:
+            album = raw_album
+
         return cls(
             title=title,
             artists=artists or "Unknown",
-            album=entry.get("album", ""),
+            album=album,
             cover_id=entry.get("coverArt") or entry.get("coverId", ""),
             duration=duration if duration and duration > 0 else None,
             position=position_seconds,
@@ -120,11 +129,12 @@ class TrackInfo:
 class NavidromeClient:
     """Handles communication with Navidrome and Imgur."""
     
-    def __init__(self, nav_config: NavidromeConfig, img_config: ImageConfig, imgur_client_id: str, strip_title_subtitle: bool = True):
+    def __init__(self, nav_config: NavidromeConfig, img_config: ImageConfig, imgur_client_id: str, track_comment: bool = False, album_version: bool = False):
         self.nav_config = nav_config
         self.img_config = img_config
         self.imgur_client_id = imgur_client_id
-        self.strip_title_subtitle = strip_title_subtitle
+        self.track_comment = track_comment
+        self.album_version = album_version
         self.nav_params = {
             "u": nav_config.username,
             "p": nav_config.password,
@@ -133,6 +143,7 @@ class NavidromeClient:
             "f": "json"
         }
         self.session = get_session()
+        self._album_version_cache: Dict[str, str] = {}  # Cache album versions by album ID
 
     def _nav_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """Handles Navidrome API calls with path suffix fallback."""
@@ -156,7 +167,45 @@ class NavidromeClient:
         """Polls Navidrome for the currently playing track."""
         data = self._nav_request("getNowPlaying")
         now_playing = data.get("subsonic-response", {}).get("nowPlaying") if data else None
-        return TrackInfo.from_json(now_playing, strip_subtitle=self.strip_title_subtitle)
+        
+        # If we want to include album version, fetch album details (with caching)
+        if now_playing and self.album_version:
+            entry = now_playing.get("entry", {})
+            if isinstance(entry, list) and entry:
+                entry = entry[0]
+            if isinstance(entry, dict):
+                album_id = entry.get("albumId")
+                if album_id:
+                    # Check cache first
+                    if album_id in self._album_version_cache:
+                        album_subtitle = self._album_version_cache[album_id]
+                        if album_subtitle:
+                            entry["_albumComment"] = album_subtitle
+                    else:
+                        # Fetch and cache album info
+                        album_info = self._get_album_info(album_id)
+                        if album_info:
+                            # Try to get album version/subtitle (could be in 'version' field)
+                            album_subtitle = album_info.get("version", "") or album_info.get("comment", "")
+                            self._album_version_cache[album_id] = album_subtitle  # Cache it
+                            if album_subtitle:
+                                entry["_albumComment"] = album_subtitle
+        
+        return TrackInfo.from_json(now_playing, track_comment=self.track_comment, album_version=self.album_version)
+
+    def _get_album_info(self, album_id: str) -> Optional[Dict[str, Any]]:
+        """Fetches album details by album ID."""
+        url = f"{self.nav_config.base_url}/getAlbum"
+        params = {**self.nav_params, "id": album_id}
+        try:
+            r = self.session.get(url, params=params, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            album = data.get("subsonic-response", {}).get("album", {})
+            return album
+        except Exception as e:
+            log(f"Failed to fetch album info: {e}")
+            return None
 
     def _download_cover_image(self, cover_id: str) -> Optional[bytes]:
         """Downloads cover image bytes."""

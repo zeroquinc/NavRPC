@@ -40,7 +40,8 @@ def main_loop(settings: Settings):
         nav_config=settings.navidrome,
         img_config=settings.image,
         imgur_client_id=settings.integration.imgur_client_id,
-        strip_title_subtitle=settings.strip_title_subtitle
+        track_comment=settings.track_comment,
+        album_version=settings.album_version
     )
     
     discord_id = settings.integration.discord_client_id
