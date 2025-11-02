@@ -39,7 +39,8 @@ def main_loop(settings: Settings):
     nav_client = NavidromeClient(
         nav_config=settings.navidrome,
         img_config=settings.image,
-        imgur_client_id=settings.integration.imgur_client_id
+        imgur_client_id=settings.integration.imgur_client_id,
+        strip_title_subtitle=settings.strip_title_subtitle
     )
     
     discord_id = settings.integration.discord_client_id

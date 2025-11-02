@@ -36,6 +36,10 @@ class Settings(BaseModel):
     def cache_file(self) -> str:
         return self.general.get("cache_file", "cache.json")
 
+    @property
+    def strip_title_subtitle(self) -> bool:
+        return self.general.get("strip_title_subtitle", True)
+
 
 def load_config(path: str = "config.yaml") -> Settings:
     """Loads and validates configuration from a YAML file."""

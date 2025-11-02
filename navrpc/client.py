@@ -45,7 +45,7 @@ class TrackInfo:
     minutes_ago: Optional[int] = None
 
     @classmethod
-    def from_json(cls, np_json: Optional[dict]) -> Optional["TrackInfo"]:
+    def from_json(cls, np_json: Optional[dict], strip_subtitle: bool = True) -> Optional["TrackInfo"]:
         # Simplified the parsing, assuming standard Navidrome output structure
         if not np_json:
             return None
@@ -57,7 +57,29 @@ class TrackInfo:
         if not isinstance(entry, dict):
             return None
 
-        title = entry.get("title") or entry.get("name", "")
+        # Get title with or without subtitle based on config
+        raw_title = entry.get("title") or entry.get("name", "")
+        
+        if strip_subtitle:
+            # sortName contains the plain title without subtitle (but lowercase)
+            # title contains the full title including subtitle in parentheses
+            sort_name = entry.get("sortName", "").strip()
+            
+            if sort_name:
+                # Use sortName but preserve the original capitalization from title
+                # by extracting the matching part from the full title
+                title_lower = raw_title.lower()
+                if title_lower.startswith(sort_name):
+                    # Extract the properly capitalized version
+                    title = raw_title[:len(sort_name)].strip()
+                else:
+                    # Fallback: capitalize each word in sortName
+                    title = sort_name.title()
+            else:
+                title = raw_title
+        else:
+            # Keep full title including subtitle
+            title = raw_title
         
         # Use the artists array which contains the proper artist information
         artist_entries = entry.get("artists", [])
@@ -98,10 +120,11 @@ class TrackInfo:
 class NavidromeClient:
     """Handles communication with Navidrome and Imgur."""
     
-    def __init__(self, nav_config: NavidromeConfig, img_config: ImageConfig, imgur_client_id: str):
+    def __init__(self, nav_config: NavidromeConfig, img_config: ImageConfig, imgur_client_id: str, strip_title_subtitle: bool = True):
         self.nav_config = nav_config
         self.img_config = img_config
         self.imgur_client_id = imgur_client_id
+        self.strip_title_subtitle = strip_title_subtitle
         self.nav_params = {
             "u": nav_config.username,
             "p": nav_config.password,
@@ -133,7 +156,7 @@ class NavidromeClient:
         """Polls Navidrome for the currently playing track."""
         data = self._nav_request("getNowPlaying")
         now_playing = data.get("subsonic-response", {}).get("nowPlaying") if data else None
-        return TrackInfo.from_json(now_playing)
+        return TrackInfo.from_json(now_playing, strip_subtitle=self.strip_title_subtitle)
 
     def _download_cover_image(self, cover_id: str) -> Optional[bytes]:
         """Downloads cover image bytes."""
