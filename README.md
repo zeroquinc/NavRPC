@@ -53,6 +53,12 @@ You must set up your API keys and Navidrome server details.
     | `integration` | `imgur_client_id` | **Required.** Get a free client ID from [Imgur's API page](https://api.imgur.com/oauth2/addclient). |
     | | `discord_client_id` | **Required.** Your Discord Application ID. **MUST BE QUOTED.** |
     | | `discord_asset_name` | *Optional.* The name of a custom asset uploaded to your Discord App (e.g., a Navidrome logo). Used as a fallback if album art fails. |
+    | `general` | `poll_interval_seconds` | How often (in seconds) to check for new tracks. Default: `5`. |
+    | | `cache_file` | Path to the local cache file. Default: `cache.json`. |
+    | | `strip_title_subtitle` | Remove subtitles from track titles (e.g., "(Explicit)", "(Remastered)"). Default: `true`. |
+    | `image` | `max_size` | Maximum width/height for album art. Default: `512`. |
+    | | `jpeg_quality` | JPEG compression quality (1-100). Default: `85`. |
+    | | `max_file_bytes` | Maximum file size in bytes. Default: `4194304` (4MB). |
 
     **⚠️ Important: Quote the Discord Client ID**
     Ensure your `discord_client_id` is enclosed in quotes to be read as a string:
