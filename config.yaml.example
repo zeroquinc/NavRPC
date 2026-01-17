@@ -11,10 +11,12 @@ integration:
   discord_asset_name: null # Set to an asset name (e.g., 'navidrome_logo') or 'null'
 
 general:
-  poll_interval_seconds: 5
-  cache_file: cache.json
+  poll_interval_playing_seconds: 10  # When music is playing
+  poll_interval_idle_seconds: 15     # When idle/no track
+  album_cache_file: "album_cache.json"
+  request_timeout_seconds: 5
   track_comment: false # Show track subtitle/comment (e.g., "(Explicit)", "(Remastered)"). Default: false
-  album_version: false # Show album version/edition (e.g., "(Remastered Edition 2014)"). Default: false
+  album_version: true # Show album version/edition (e.g., "(Limited Edition Collector's Set)"). Default: false
 
 image:
   max_size: 512 # Max width/height for image assets (Discord recommended is 512)

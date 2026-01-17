@@ -24,12 +24,23 @@ def get_session() -> requests.Session:
     global _SESSION
     if _SESSION is None:
         _SESSION = requests.Session()
-        # Your existing retry logic
-        retry_strategy = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        # Retry strategy: exponential backoff for rate limits and server errors
+        retry_strategy = Retry(total=2, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
         adapter = HTTPAdapter(max_retries=retry_strategy)
         _SESSION.mount("http://", adapter)
         _SESSION.mount("https://", adapter)
     return _SESSION
+
+_REQUEST_COUNT = 0
+
+def _increment_request_count():
+    """Track requests for debugging."""
+    global _REQUEST_COUNT
+    _REQUEST_COUNT += 1
+
+def get_request_count() -> int:
+    """Get total requests made (for debugging)."""
+    return _REQUEST_COUNT
 
 # -------------------------
 # Data Model
@@ -129,12 +140,14 @@ class TrackInfo:
 class NavidromeClient:
     """Handles communication with Navidrome and Imgur."""
     
-    def __init__(self, nav_config: NavidromeConfig, img_config: ImageConfig, imgur_client_id: str, track_comment: bool = False, album_version: bool = False):
+    def __init__(self, nav_config: NavidromeConfig, img_config: ImageConfig, imgur_client_id: str, track_comment: bool = False, album_version: bool = False, request_timeout: float = 5.0, album_cache_file: str = "album_cache.json"):
         self.nav_config = nav_config
         self.img_config = img_config
         self.imgur_client_id = imgur_client_id
         self.track_comment = track_comment
         self.album_version = album_version
+        self.request_timeout = request_timeout
+        self.album_cache_file = album_cache_file
         self.nav_params = {
             "u": nav_config.username,
             "p": nav_config.password,
@@ -143,20 +156,43 @@ class NavidromeClient:
             "f": "json"
         }
         self.session = get_session()
-        self._album_version_cache: Dict[str, str] = {}  # Cache album versions by album ID
+        self._album_version_cache: Dict[str, str] = self._load_album_cache()  # Load persistent cache
+
+    def _load_album_cache(self) -> Dict[str, str]:
+        """Load persistent album version cache from disk."""
+        import os
+        if not os.path.exists(self.album_cache_file):
+            return {}
+        try:
+            import json
+            with open(self.album_cache_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            log(f"Warning: Could not load album cache: {e}")
+            return {}
+
+    def _save_album_cache(self):
+        """Save persistent album version cache to disk."""
+        import json
+        try:
+            with open(self.album_cache_file, "w", encoding="utf-8") as f:
+                json.dump(self._album_version_cache, f, indent=2)
+        except Exception as e:
+            log(f"Warning: Could not save album cache: {e}")
 
     def _nav_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """Handles Navidrome API calls with path suffix fallback."""
+        _increment_request_count()
         url = f"{self.nav_config.base_url}/{endpoint}"
         try:
-            r = self.session.get(url, params=self.nav_params, timeout=5)
+            r = self.session.get(url, params=self.nav_params, timeout=self.request_timeout)
             r.raise_for_status()
             return r.json()
         except Exception:
             try:
                 # Subsonic APIs often use a .view suffix
                 url_view = f"{self.nav_config.base_url}/{endpoint}.view"
-                r = self.session.get(url_view, params=self.nav_params, timeout=5)
+                r = self.session.get(url_view, params=self.nav_params, timeout=self.request_timeout)
                 r.raise_for_status()
                 return r.json()
             except Exception as e:
@@ -188,6 +224,7 @@ class NavidromeClient:
                             # Try to get album version/subtitle (could be in 'version' field)
                             album_subtitle = album_info.get("version", "") or album_info.get("comment", "")
                             self._album_version_cache[album_id] = album_subtitle  # Cache it
+                            self._save_album_cache()  # Persist to disk
                             if album_subtitle:
                                 entry["_albumComment"] = album_subtitle
         
@@ -195,10 +232,11 @@ class NavidromeClient:
 
     def _get_album_info(self, album_id: str) -> Optional[Dict[str, Any]]:
         """Fetches album details by album ID."""
+        _increment_request_count()
         url = f"{self.nav_config.base_url}/getAlbum"
         params = {**self.nav_params, "id": album_id}
         try:
-            r = self.session.get(url, params=params, timeout=5)
+            r = self.session.get(url, params=params, timeout=self.request_timeout)
             r.raise_for_status()
             data = r.json()
             album = data.get("subsonic-response", {}).get("album", {})

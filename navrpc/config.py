@@ -56,6 +56,26 @@ class Settings(BaseModel):
             return not bool(self.general.get("strip_album_subtitle"))
         return False
 
+    @property
+    def poll_interval_playing(self) -> int:
+        """Polling interval when a track is playing (seconds)."""
+        return self.general.get("poll_interval_playing_seconds", 10)
+
+    @property
+    def poll_interval_idle(self) -> int:
+        """Polling interval when idle/no track (seconds)."""
+        return self.general.get("poll_interval_idle_seconds", 30)
+
+    @property
+    def album_cache_file(self) -> str:
+        """Path to persistent album version cache."""
+        return self.general.get("album_cache_file", "album_cache.json")
+
+    @property
+    def request_timeout(self) -> float:
+        """Timeout for Navidrome requests (seconds)."""
+        return float(self.general.get("request_timeout_seconds", 5))
+
 
 def load_config(path: str = "config.yaml") -> Settings:
     """Loads and validates configuration from a YAML file."""

@@ -33,7 +33,7 @@ def save_cache(cache: Dict[str, str], file_path: str):
 # Main Execution
 # -------------------------
 def main_loop(settings: Settings):
-    """Initializes clients and runs the main polling loop."""
+    """Initializes clients and runs the main polling loop with adaptive intervals."""
     
     # 1. Initialization
     nav_client = NavidromeClient(
@@ -41,17 +41,24 @@ def main_loop(settings: Settings):
         img_config=settings.image,
         imgur_client_id=settings.integration.imgur_client_id,
         track_comment=settings.track_comment,
-        album_version=settings.album_version
+        album_version=settings.album_version,
+        request_timeout=settings.request_timeout,
+        album_cache_file=settings.album_cache_file
     )
     
     discord_id = settings.integration.discord_client_id
     cache = load_cache(settings.cache_file)
     last_track_key = None
-    poll_interval = settings.poll_interval
+    poll_interval_playing = settings.poll_interval_playing
+    poll_interval_idle = settings.poll_interval_idle
+    consecutive_failures = 0
+    max_backoff_interval = max(poll_interval_playing, poll_interval_idle) * 3
 
     if not discord_id:
         log("❌ Please set discord_client_id in config.yaml.")
         return
+
+    log(f"Starting NavRPC polling: {poll_interval_playing}s when playing, {poll_interval_idle}s when idle")
 
     # 2. Main Loop
     try:
@@ -63,25 +70,35 @@ def main_loop(settings: Settings):
                     if last_track_key is not None:
                         rpc.clear()
                         log("No track playing. Clearing RPC.")
+                        consecutive_failures = 0
                     last_track_key = None
-                    time.sleep(poll_interval)
-                    continue
-                
-                track_key = track.key()
-                if track_key != last_track_key:
-                    log(f"Now playing new track: {track.artists} — {track.title}")
+                    current_interval = poll_interval_idle
+                else:
+                    consecutive_failures = 0
+                    track_key = track.key()
+                    if track_key != last_track_key:
+                        log(f"Now playing new track: {track.artists} — {track.title}")
+                        
+                        # Get/Upload Image
+                        imgur_url = nav_client.get_or_upload_cover(track, cache)
+                        save_cache(cache, settings.cache_file)
+
+                        # Update RPC
+                        image_asset = imgur_url or settings.integration.discord_asset_name
+                        rpc.update(track, image_asset)
+
+                        last_track_key = track_key
                     
-                    # Get/Upload Image
-                    imgur_url = nav_client.get_or_upload_cover(track, cache)
-                    save_cache(cache, settings.cache_file)
+                    current_interval = poll_interval_playing
 
-                    # Update RPC
-                    image_asset = imgur_url or settings.integration.discord_asset_name
-                    rpc.update(track, image_asset)
-
-                    last_track_key = track_key
-
-                time.sleep(poll_interval)
+                # Exponential backoff on consecutive failures
+                if track is None and consecutive_failures > 0:
+                    backoff_interval = min(2 ** (consecutive_failures - 1) * poll_interval_idle, max_backoff_interval)
+                    log(f"Request failed. Backing off for {backoff_interval}s (attempt {consecutive_failures})")
+                    time.sleep(backoff_interval)
+                    consecutive_failures += 1
+                else:
+                    time.sleep(current_interval)
                 
     except ConnectionError:
         log("Fatal error connecting to Discord RPC. Exiting.")
