@@ -14,6 +14,7 @@
 * **Intelligent Caching:** Uploads and caches album art (via Imgur) locally.
 * **Resource Friendly:** Optimized for low CPU/RAM usage, ideal for running on a server, NAS, or Raspberry Pi.
 * **Timestamp Accuracy:** Calculates track start and end times to display the remaining time accurately. Note: Can be inaccurate.
+* **System Tray Support:** Runs in the Windows system tray with status and controls (Windows).
 
 ## 🚀 Setup
 
@@ -33,6 +34,14 @@ You need **Python 3.8+** installed on your system.
     ```bash
     pip install -r requirements.txt
     ```
+    
+    This will install:
+    - `pillow` - Image processing
+    - `pydantic` - Configuration validation
+    - `pypresence` - Discord Rich Presence
+    - `pystray` - System tray support (Windows)
+    - `PyYAML` - Configuration file parsing
+    - `requests` - HTTP client
 
 ### 3. Configuration
 
@@ -67,14 +76,3 @@ You must set up your API keys and Navidrome server details.
     integration:
       discord_client_id: '11907920212632236732'
     ```
-
-## ⚙️ Usage
-
-### Running Manually
-
-Execute the entry point script from the project root:
-
-```bash
-
-
-python run.py

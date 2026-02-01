@@ -9,13 +9,9 @@ from urllib3.util.retry import Retry
 from PIL import Image
 
 from .config import NavidromeConfig, ImageConfig
+from .logger import get_logger
 
-# -------------------------
-# Utilities
-# -------------------------
-def log(msg: str):
-    """Simplified log function."""
-    print(f"[NavRPC] {msg}")
+logger = get_logger()
 
 _SESSION: Optional[requests.Session] = None
 
@@ -157,6 +153,7 @@ class NavidromeClient:
         }
         self.session = get_session()
         self._album_version_cache: Dict[str, str] = self._load_album_cache()  # Load persistent cache
+        self._image_data_cache: Dict[str, bytes] = {}  # In-memory cache for image data
 
     def _load_album_cache(self) -> Dict[str, str]:
         """Load persistent album version cache from disk."""
@@ -168,7 +165,7 @@ class NavidromeClient:
             with open(self.album_cache_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            log(f"Warning: Could not load album cache: {e}")
+            logger.warning(f"Could not load album cache: {e}")
             return {}
 
     def _save_album_cache(self):
@@ -178,7 +175,7 @@ class NavidromeClient:
             with open(self.album_cache_file, "w", encoding="utf-8") as f:
                 json.dump(self._album_version_cache, f, indent=2)
         except Exception as e:
-            log(f"Warning: Could not save album cache: {e}")
+            logger.warning(f"Could not save album cache: {e}")
 
     def _nav_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """Handles Navidrome API calls with path suffix fallback."""
@@ -196,7 +193,7 @@ class NavidromeClient:
                 r.raise_for_status()
                 return r.json()
             except Exception as e:
-                log(f"Navidrome request failed for {endpoint}: {e}")
+                logger.error(f"Navidrome request failed for {endpoint}: {e}")
                 return None
 
     def get_now_playing(self) -> Optional[TrackInfo]:
@@ -242,7 +239,7 @@ class NavidromeClient:
             album = data.get("subsonic-response", {}).get("album", {})
             return album
         except Exception as e:
-            log(f"Failed to fetch album info: {e}")
+            logger.error(f"Failed to fetch album info: {e}")
             return None
 
     def _download_cover_image(self, cover_id: str) -> Optional[bytes]:
@@ -269,18 +266,18 @@ class NavidromeClient:
             max_size = (self.img_config.max_size, self.img_config.max_size)
             if img.width > max_size[0] or img.height > max_size[1]:
                 img.thumbnail(max_size, Image.Resampling.LANCZOS)
-                log(f"Resized image to {img.width}x{img.height}")
+                logger.info(f"Resized image to {img.width}x{img.height}")
             
             output_buffer = io.BytesIO()
             img.save(output_buffer, format="JPEG", quality=self.img_config.jpeg_quality, optimize=True)
             optimized_bytes = output_buffer.getvalue()
             
             if len(optimized_bytes) > self.img_config.max_file_bytes:
-                log(f"Optimized image is still too large ({len(optimized_bytes)/(1024*1024):.2f}MB).")
+                logger.warning(f"Optimized image is still too large ({len(optimized_bytes)/(1024*1024):.2f}MB).")
                 return None
             return optimized_bytes
         except Exception as e:
-            log(f"Error optimizing image: {e}")
+            logger.error(f"Error optimizing image: {e}")
             return None
 
     def _upload_imgur(self, image_bytes: bytes) -> Optional[str]:
@@ -295,43 +292,65 @@ class NavidromeClient:
             if payload.get("success"):
                 return payload["data"]["link"]
         except Exception as e:
-            log(f"Imgur upload failed: {e}")
+            logger.error(f"Imgur upload failed: {e}")
         return None
 
-    def get_or_upload_cover(self, track: TrackInfo, cache: Dict[str, str]) -> Optional[str]:
-        """Checks cache, downloads, optimizes, uploads, and saves to cache."""
+    def get_or_upload_cover(self, track: TrackInfo, cache: Dict[str, str]) -> Tuple[Optional[str], Optional[bytes]]:
+        """
+        Checks cache, downloads, optimizes, uploads, and saves to cache.
+        Returns tuple of (imgur_url, optimized_image_bytes)
+        """
         if not track.album or not track.cover_id:
-            return None
+            return None, None
         
-        # 1. Check Cache
-        if track.album in cache:
-            return cache[track.album]
+        # 1. Check URL Cache
+        imgur_url = cache.get(track.album)
+        
+        # 2. Check if we have cached image data
+        if track.album in self._image_data_cache:
+            logger.info(f"Using cached image data for: {track.album}")
+            return imgur_url, self._image_data_cache[track.album]
+        
+        if imgur_url:
+            # URL is cached but we don't have image data - try to get it
+            logger.info(f"Album art URL cached: {imgur_url}")
+            # Download the image from Navidrome to get the data
+            img_bytes = self._download_cover_image(track.cover_id)
+            if img_bytes:
+                optimized_img_bytes = self._optimize_image(img_bytes)
+                if optimized_img_bytes:
+                    self._image_data_cache[track.album] = optimized_img_bytes
+                    return imgur_url, optimized_img_bytes
+            return imgur_url, None
 
-        # 2. Download
-        log("Downloading cover art...")
+        # 3. Download from Navidrome
+        logger.info("Downloading cover art...")
         img_bytes = self._download_cover_image(track.cover_id)
         if not img_bytes:
-            log("Could not download cover art from Navidrome.")
-            return None
+            logger.warning("Could not download cover art from Navidrome.")
+            return None, None
 
-        # 3. Optimize
-        log(f"Original image size: {len(img_bytes) / (1024*1024):.2f}MB")
+        # 4. Optimize
+        logger.info(f"Original image size: {len(img_bytes) / (1024*1024):.2f}MB")
         optimized_img_bytes = self._optimize_image(img_bytes)
         if not optimized_img_bytes:
-            log("Image optimization failed.")
-            return None
+            logger.warning("Image optimization failed.")
+            return None, None
         
-        log(f"Optimized image size: {len(optimized_img_bytes) / (1024*1024):.2f}MB")
+        logger.info(f"Optimized image size: {len(optimized_img_bytes) / (1024*1024):.2f}MB")
 
-        # 4. Upload
-        log("Attempting to upload cover art to Imgur...")
+        # 5. Cache image data
+        self._image_data_cache[track.album] = optimized_img_bytes
+
+        # 6. Upload to Imgur
+        logger.info("Attempting to upload cover art to Imgur...")
         imgur_url = self._upload_imgur(optimized_img_bytes)
         
-        # 5. Cache and Return
+        # 7. Cache URL
         if imgur_url:
             cache[track.album] = imgur_url
-            log(f"Uploaded and cached: {imgur_url}")
+            logger.info(f"Uploaded and cached: {imgur_url}")
         else:
-            log("Imgur upload failed.")
+            logger.warning("Imgur upload failed.")
             
-        return imgur_url
+        return imgur_url, optimized_img_bytes

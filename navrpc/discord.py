@@ -4,7 +4,10 @@ from typing import Optional, Tuple
 from pypresence.presence import Presence
 from pypresence.types import ActivityType, StatusDisplayType
 
-from .client import TrackInfo, log
+from .client import TrackInfo
+from .logger import get_logger
+
+logger = get_logger()
 
 # -------------------------
 # Discord RPC
@@ -22,9 +25,9 @@ class DiscordPresence:
         try:
             self.rpc.connect()
             self.is_connected = True
-            log("Connected to Discord RPC.")
+            logger.info("Connected to Discord RPC.")
         except Exception as e:
-            log(f"Failed to connect to Discord RPC: {e}")
+            logger.error(f"Failed to connect to Discord RPC: {e}")
             raise ConnectionError("Discord RPC connection failed.") from e
         return self
 
@@ -48,7 +51,7 @@ class DiscordPresence:
     def update(self, track: TrackInfo, image_url: Optional[str]):
         """Calculates timestamps and updates the Rich Presence."""
         if not self.is_connected:
-            log("RPC not connected, skipping update.")
+            logger.warning("RPC not connected, skipping update.")
             return
 
         now = time.time()
@@ -91,7 +94,7 @@ class DiscordPresence:
             start=start_ts,
             end=end_ts,
         )
-        log(f"🎵 RPC Updated: {artists} — {title}")
+        logger.info(f"🎵 RPC Updated: {artists} — {title}")
         self.last_rpc_details = current_rpc_details
 
     def clear(self):

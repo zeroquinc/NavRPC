@@ -1,11 +1,15 @@
 import time
 import json
 import os
-from typing import Dict, Any
+import threading
+from typing import Dict, Any, Optional
 
 from .config import Settings
-from .client import NavidromeClient, log
+from .client import NavidromeClient
 from .discord import DiscordPresence
+from .logger import get_logger
+
+logger = get_logger()
 
 # -------------------------
 # Cache Management
@@ -17,8 +21,8 @@ def load_cache(file_path: str) -> Dict[str, str]:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
-        log("Error loading cache file. Starting fresh.")
+    except Exception as e:
+        logger.warning(f"Error loading cache file: {e}. Starting fresh.")
         return {}
 
 def save_cache(cache: Dict[str, str], file_path: str):
@@ -27,12 +31,12 @@ def save_cache(cache: Dict[str, str], file_path: str):
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2)
     except Exception as e:
-        log(f"Error saving cache: {e}")
+        logger.error(f"Error saving cache: {e}")
 
 # -------------------------
 # Main Execution
 # -------------------------
-def main_loop(settings: Settings):
+def main_loop(settings: Settings, tray_icon=None):
     """Initializes clients and runs the main polling loop with adaptive intervals."""
     
     # 1. Initialization
@@ -55,10 +59,10 @@ def main_loop(settings: Settings):
     max_backoff_interval = max(poll_interval_playing, poll_interval_idle) * 3
 
     if not discord_id:
-        log("❌ Please set discord_client_id in config.yaml.")
+        logger.error("❌ Please set discord_client_id in config.yaml.")
         return
 
-    log(f"Starting NavRPC polling: {poll_interval_playing}s when playing, {poll_interval_idle}s when idle")
+    logger.info(f"Starting NavRPC polling: {poll_interval_playing}s when playing, {poll_interval_idle}s when idle")
 
     # 2. Main Loop
     try:
@@ -69,7 +73,9 @@ def main_loop(settings: Settings):
                 if not track:
                     if last_track_key is not None:
                         rpc.clear()
-                        log("No track playing. Clearing RPC.")
+                        logger.info("No track playing. Clearing RPC.")
+                        if tray_icon:
+                            tray_icon.clear_track()
                         consecutive_failures = 0
                     last_track_key = None
                     current_interval = poll_interval_idle
@@ -77,11 +83,22 @@ def main_loop(settings: Settings):
                     consecutive_failures = 0
                     track_key = track.key()
                     if track_key != last_track_key:
-                        log(f"Now playing new track: {track.artists} — {track.title}")
+                        logger.info(f"Now playing new track: {track.artists} — {track.title}")
                         
-                        # Get/Upload Image
-                        imgur_url = nav_client.get_or_upload_cover(track, cache)
+                        # Get/Upload Image (returns both URL and image bytes)
+                        imgur_url, image_data = nav_client.get_or_upload_cover(track, cache)
                         save_cache(cache, settings.cache_file)
+                        
+                        # Update tray with detailed info and image data
+                        if tray_icon:
+                            tray_icon.update_track(
+                                track_info=f"{track.artists} — {track.title}",
+                                title=track.title,
+                                artist=track.artists,
+                                album=track.album,
+                                album_art_url=imgur_url,
+                                album_art_data=image_data
+                            )
 
                         # Update RPC
                         image_asset = imgur_url or settings.integration.discord_asset_name
@@ -94,15 +111,15 @@ def main_loop(settings: Settings):
                 # Exponential backoff on consecutive failures
                 if track is None and consecutive_failures > 0:
                     backoff_interval = min(2 ** (consecutive_failures - 1) * poll_interval_idle, max_backoff_interval)
-                    log(f"Request failed. Backing off for {backoff_interval}s (attempt {consecutive_failures})")
+                    logger.warning(f"Request failed. Backing off for {backoff_interval}s (attempt {consecutive_failures})")
                     time.sleep(backoff_interval)
                     consecutive_failures += 1
                 else:
                     time.sleep(current_interval)
                 
     except ConnectionError:
-        log("Fatal error connecting to Discord RPC. Exiting.")
+        logger.critical("Fatal error connecting to Discord RPC. Exiting.")
     except KeyboardInterrupt:
-        log("Exiting gracefully...")
+        logger.info("Exiting gracefully...")
     except Exception as e:
-        log(f"An unexpected error occurred: {e}")
+        logger.exception(f"An unexpected error occurred: {e}")
