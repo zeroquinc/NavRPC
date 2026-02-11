@@ -79,21 +79,30 @@ class DiscordPresence:
         artists = self._safe_text(track.artists, "Unknown Artist")
         album = self._safe_text(track.album, "Navidrome")
 
-        current_rpc_details = (title, artists, album, final_image, start_ts, end_ts)
+        hide_album = False
+        if track.is_single:
+            hide_album = title.strip().casefold() == album.strip().casefold()
+
+        display_album = None if hide_album else album
+
+        current_rpc_details = (title, artists, display_album, final_image, start_ts, end_ts)
 
         if current_rpc_details == self.last_rpc_details:
             return  # Skip redundant updates
 
-        self.rpc.update(
-            activity_type=ActivityType.LISTENING,
-            status_display_type=StatusDisplayType.STATE,
-            details=title,
-            state=artists,
-            large_text=album,
-            large_image=final_image,
-            start=start_ts,
-            end=end_ts,
-        )
+        payload = {
+            "activity_type": ActivityType.LISTENING,
+            "status_display_type": StatusDisplayType.STATE,
+            "details": title,
+            "state": artists,
+            "large_image": final_image,
+            "start": start_ts,
+            "end": end_ts,
+        }
+        if display_album:
+            payload["large_text"] = display_album
+
+        self.rpc.update(**payload)
         logger.info(f"🎵 RPC Updated: {artists} — {title}")
         self.last_rpc_details = current_rpc_details
 

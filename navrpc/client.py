@@ -50,6 +50,7 @@ class TrackInfo:
     duration: Optional[int] = None
     position: Optional[float] = None
     minutes_ago: Optional[int] = None
+    is_single: bool = False
 
     @classmethod
     def from_json(cls, np_json: Optional[dict], track_comment: bool = False, album_version: bool = False) -> Optional["TrackInfo"]:
@@ -153,6 +154,7 @@ class NavidromeClient:
         }
         self.session = get_session()
         self._album_version_cache: Dict[str, str] = self._load_album_cache()  # Load persistent cache
+        self._album_release_types_cache: Dict[str, Optional[Tuple[str, ...]]] = {}
         self._image_data_cache: Dict[str, bytes] = {}  # In-memory cache for image data
 
     def _load_album_cache(self) -> Dict[str, str]:
@@ -200,13 +202,17 @@ class NavidromeClient:
         """Polls Navidrome for the currently playing track."""
         data = self._nav_request("getNowPlaying")
         now_playing = data.get("subsonic-response", {}).get("nowPlaying") if data else None
-        
-        # If we want to include album version, fetch album details (with caching)
-        if now_playing and self.album_version:
+        entry = None
+
+        if now_playing:
             entry = now_playing.get("entry", {})
             if isinstance(entry, list) and entry:
                 entry = entry[0]
-            if isinstance(entry, dict):
+            if not isinstance(entry, dict):
+                entry = None
+        
+        # If we want to include album version, fetch album details (with caching)
+        if now_playing and self.album_version and entry:
                 album_id = entry.get("albumId")
                 if album_id:
                     # Check cache first
@@ -225,7 +231,57 @@ class NavidromeClient:
                             if album_subtitle:
                                 entry["_albumComment"] = album_subtitle
         
-        return TrackInfo.from_json(now_playing, track_comment=self.track_comment, album_version=self.album_version)
+        track = TrackInfo.from_json(now_playing, track_comment=self.track_comment, album_version=self.album_version)
+        if track and entry:
+            track.is_single = self._is_single_track(track, entry)
+        return track
+
+    def _is_single_track(self, track: TrackInfo, entry: Dict[str, Any]) -> bool:
+        if not track.title or not track.album:
+            return False
+
+        if track.title.strip().casefold() != track.album.strip().casefold():
+            return False
+
+        album_id = entry.get("albumId")
+        if not album_id:
+            return False
+
+        if album_id in self._album_release_types_cache:
+            release_types = self._album_release_types_cache[album_id]
+        else:
+            album_info = self._get_album_info(album_id)
+            release_types = None
+            if album_info:
+                raw_release_types = (
+                    album_info.get("releaseTypes")
+                    or album_info.get("releaseType")
+                    or album_info.get("release_type")
+                )
+                if isinstance(raw_release_types, str):
+                    release_types = (raw_release_types,)
+                elif isinstance(raw_release_types, (list, tuple)):
+                    release_types = tuple(str(item) for item in raw_release_types if item is not None)
+            self._album_release_types_cache[album_id] = release_types
+
+        if release_types:
+            return any(rt.strip().casefold() == "single" for rt in release_types)
+
+        album_info = self._get_album_info(album_id)
+        if not album_info:
+            return False
+
+        raw_count = (
+            album_info.get("songCount")
+            or album_info.get("songcount")
+            or album_info.get("song_count")
+        )
+        try:
+            song_count = int(raw_count) if raw_count is not None else None
+        except Exception:
+            song_count = None
+
+        return song_count == 1
 
     def _get_album_info(self, album_id: str) -> Optional[Dict[str, Any]]:
         """Fetches album details by album ID."""
