@@ -57,6 +57,7 @@ def main_loop(settings: Settings, tray_icon=None):
     poll_interval_idle = settings.poll_interval_idle
     consecutive_failures = 0
     max_backoff_interval = max(poll_interval_playing, poll_interval_idle) * 3
+    ignored_artists = {artist.casefold() for artist in settings.ignored_artists}
 
     if not discord_id:
         logger.error("❌ Please set discord_client_id in config.yaml.")
@@ -69,6 +70,12 @@ def main_loop(settings: Settings, tray_icon=None):
         with DiscordPresence(discord_id) as rpc:
             while True:
                 track = nav_client.get_now_playing()
+
+                if track and ignored_artists:
+                    artist_list = [part.strip().casefold() for part in track.artists.split(",") if part.strip()]
+                    if any(artist in ignored_artists for artist in artist_list):
+                        logger.info(f"Ignoring track by artist: {track.artists}")
+                        track = None
 
                 if not track:
                     if last_track_key is not None:

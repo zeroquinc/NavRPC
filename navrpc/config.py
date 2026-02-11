@@ -76,6 +76,16 @@ class Settings(BaseModel):
         """Timeout for Navidrome requests (seconds)."""
         return float(self.general.get("request_timeout_seconds", 5))
 
+    @property
+    def ignored_artists(self) -> list[str]:
+        """List of artist names to ignore (case-insensitive exact match)."""
+        raw = self.general.get("ignored_artists", [])
+        if isinstance(raw, str):
+            raw = [part.strip() for part in raw.split(",")]
+        if not isinstance(raw, list):
+            return []
+        return [str(item).strip() for item in raw if str(item).strip()]
+
 
 def load_config(path: str = "config.yaml") -> Settings:
     """Loads and validates configuration from a YAML file."""
